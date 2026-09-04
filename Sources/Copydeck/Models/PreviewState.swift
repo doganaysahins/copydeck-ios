@@ -27,3 +27,20 @@ public struct PreviewState: Codable, Equatable, Sendable {
         self.strings = strings
     }
 }
+
+/// Test Mode'un cihazdaki hali.
+///
+/// Uygulama bunu gosterir, kendi tuttugu bir bayragi degil: oturum panelden
+/// bitirilebilir ya da suresi dolabilir, o zaman uygulamanin bayragi yalan
+/// soylerdi.
+public enum TestModeState: Equatable, Sendable {
+    /// Baglanti yok; cihaz yayinlanmis metinleri gosteriyor.
+    case off
+
+    /// Kod girildi ama sunucudan henuz cevap gelmedi. Gecersiz bir kod
+    /// girildiginde de burada kalinir.
+    case connecting
+
+    /// Baglanti kuruldu; ekranda taslak metinler var.
+    case live(locale: String)
+}

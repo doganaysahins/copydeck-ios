@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.3.1"
+    public static let version = "0.4.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -96,6 +96,7 @@ public final class Localization: @unchecked Sendable {
     private var pollTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var previewRevision: Int?
+    private var testMode: TestModeState = .off
     private var foregroundObserver: NSObjectProtocol?
 
     /// Yayinlanmis icerigi izleyen gelistirme sorgusu.
@@ -239,16 +240,32 @@ public final class Localization: @unchecked Sendable {
     /// Taslak metinler diske yazilmaz. Yazilsaydi oturum bittikten sonra da
     /// cihazda kalirlardi — yani QA seansi biter, yayinlanmamis metin
     /// kullanicinin karsisina cikardi.
+    /// Test Mode'un o anki hali.
+    ///
+    /// Uygulama bunu okuyup gostermeli, kendi tuttugu bir bayragi degil:
+    /// oturum panelden bitirilebilir ya da suresi dolabilir ve o zaman
+    /// uygulamanin bayragi yalan soylerdi.
+    ///
+    /// Deger degistiginde gorunum tazeleniyor, yani SwiftUI'de dogrudan
+    /// okunabilir.
+    public var testModeState: TestModeState {
+        lock.withLock { testMode }
+    }
+
     public var isTestModeActive: Bool {
-        lock.withLock { previewTask != nil }
+        testModeState != .off
     }
 
     public func startTestMode(token: String) {
         // Sayac gorevden once sifirlaniyor: gorev hemen calismaya basliyor ve
         // ilk turu bittikten sonra sifirlarsak o turun sonucu unutulur.
-        lock.withLock { previewRevision = nil }
+        lock.withLock {
+            previewRevision = nil
+            testMode = .connecting
+        }
 
         Copydeck.log("test: oturuma baglaniliyor")
+        notifyUI()
 
         let task = Task { [weak self] in
             while !Task.isCancelled {
@@ -302,7 +319,15 @@ public final class Localization: @unchecked Sendable {
             "test: \(state.locale) rev \(state.revision), \(state.strings.count) key uygulaniyor"
         )
 
-        lock.withLock { previewRevision = state.revision }
+        let becameLive = lock.withLock { () -> Bool in
+            previewRevision = state.revision
+
+            let next = TestModeState.live(locale: state.locale)
+            let changed = testMode != next
+            testMode = next
+
+            return changed
+        }
 
         // release 0: bu icerik yayinlanmadi, bir surum numarasi yok.
         let draft = LocalizationBundle(
@@ -313,7 +338,7 @@ public final class Localization: @unchecked Sendable {
         )
 
         // Yalnizca bellege. cache.save cagrilmiyor, kasitli.
-        if store.apply(draft) {
+        if store.apply(draft) || becameLive {
             notifyUI()
         }
     }
@@ -325,9 +350,12 @@ public final class Localization: @unchecked Sendable {
             previewTask?.cancel()
             previewTask = nil
             previewRevision = nil
+            testMode = .off
 
             return publishedBundle
         }
+
+        notifyUI()
 
         if let published, store.apply(published) {
             notifyUI()
