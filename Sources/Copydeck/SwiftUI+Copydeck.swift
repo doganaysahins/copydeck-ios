@@ -1,15 +1,18 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// Panelden yonetilen metin.
+/// Anahtari calisma zamaninda belli olan metin.
 ///
-///     CopyText("paywall.title")
-///     CopyText("paywall.title", fallback: "Unlock Premium")
+///     ForEach(features) { feature in
+///         CopyText(feature.key)
+///     }
 ///
-/// Kendi kendini tazeler: yeni bir paket yayinlandiginda kok gorunumde
-/// hicbir kurulum olmadan guncellenir.
+/// Cogu durumda `@Localized` daha uygun — duz `String` verdigi icin `Text`,
+/// `Button` basligi ve birlestirme dahil her yerde calisir. Ama `@Localized`
+/// bir saklanan alan olmak zorunda, yani dongude ya da veriden gelen
+/// anahtarlarla kullanilamaz. `CopyText` o bosluk icin.
 ///
-/// `Text` gibi davranir; gorunum degistiricileri aynen calisir:
+/// `Text` gibi davranir, kendi kendini tazeler:
 ///
 ///     CopyText("paywall.title")
 ///         .font(.largeTitle.bold())

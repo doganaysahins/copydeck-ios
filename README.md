@@ -46,48 +46,60 @@ Localization.shared.configure(
 Hepsi bu. Uygulama one geldiginde yeni surumu SDK kendisi ariyor; kok
 gorunumde kurulum yok.
 
-Metin icin `CopyText`:
-
-```swift
-CopyText("paywall.title")
-CopyText("paywall.title", fallback: "Unlock Premium")
-
-CopyText("paywall.title")
-    .font(.largeTitle.bold())
-```
-
-`Text` gibi davranir ve **kendi kendini tazeler** — yeni bir paket
-yayinlandiginda hicbir sey yapman gerekmez.
-
-`Text` degil `String` gerektiginde — `Button` basligi, `Label`,
-`Text + Text` birlestirmesi, `accessibilityLabel` — `@Localized`:
+Metinleri `@Localized` ile bildirirsin:
 
 ```swift
 struct PaywallView: View {
+    @Localized("paywall.title", fallback: "Unlock Premium") var title
     @Localized("paywall.cta.start_trial") var cta
 
     var body: some View {
-        Button(cta) { startTrial() }
+        VStack {
+            Text(title)
+                .font(.largeTitle.bold())
+
+            Button(cta) { startTrial() }
+        }
     }
 }
 ```
 
-`DynamicProperty` oldugu icin SwiftUI bunu iceren gorunumun bagimliligi
-sayiyor: yeni paket geldiginde yalnizca o gorunum yeniden degerlendiriliyor,
-kimlik degismedigi icin `@State` ve scroll pozisyonu oldugu gibi kaliyor.
+Duz `String` verdigi icin her yerde calisir: `Text`, `Button` basligi,
+`Label`, `Text + Text` birlestirmesi, `accessibilityLabel`.
 
-SwiftUI disinda (UIKit, is mantigi, analitik) `.localize`:
+`DynamicProperty` oldugu icin SwiftUI bunu iceren gorunumun bagimliligi
+sayiyor: yeni paket geldiginde yalnizca o gorunum yeniden degerlendiriliyor.
+Kimlik degismedigi icin `@State`, scroll pozisyonu ve navigasyon oldugu gibi
+kaliyor.
+
+Yan faydasi: ekranin yonetilen butun metinlerini struct'in tepesinde bir
+arada gorursun.
+
+### Anahtar derleme zamaninda belli degilse
+
+`@Localized` bir saklanan alan olmak zorunda, yani dongude kullanilamaz.
+Anahtar veriden geliyorsa `CopyText`:
+
+```swift
+ForEach(features) { feature in
+    CopyText(feature.key)
+}
+```
+
+`Text` gibi davranir, kendi kendini tazeler.
+
+### SwiftUI disinda
 
 ```swift
 label.text = "paywall.title".localize
 ```
 
-### Hangisi ne zaman
+### Ozet
 
 | Durum | Kullan |
 |---|---|
-| SwiftUI'de dogrudan metin | `CopyText("key")` |
-| `String` gereken SwiftUI yeri | `@Localized("key") var x` |
+| Cogu yer | `@Localized("key") var x` |
+| Anahtar calisma zamaninda belli | `CopyText(key)` |
 | SwiftUI disi kod | `"key".localize` |
 
 `.copydeckUpdates()` diye bir modifier de var ama **son care**: altta `.id()`
