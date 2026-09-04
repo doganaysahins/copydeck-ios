@@ -43,7 +43,42 @@ Localization.shared.configure(projectKey: "pk_live_...")
 Sunucu adresi istenmiyor: o bizim altyapi detayimiz. Kendi sunucunu
 kullaniyorsan `baseURL:` ile gecebilirsin.
 
+### Acilista metnin ziplamasini onlemek
+
+Cache'te release 4, sunucuda 5 varsa uygulama once 4'u cizer, ~200ms sonra
+5 gelir ve metin gozun onunde degisir. Bu her publish'ten sonraki her
+acilista olur.
+
+Ilk render'i kisa bir sure ag icin bekleterek onlenir:
+
+```swift
+struct RootView: View {
+    @State private var ready = false
+
+    var body: some View {
+        Group {
+            if ready { PaywallView() } else { Color(.systemBackground) }
+        }
+        .task {
+            await Localization.shared.warmUp()
+            ready = true
+        }
+    }
+}
+```
+
+Normal baglantida manifest 100-150ms'de donuyor, yani ziplama hic gorunmez.
+Ag yoksa ya da yavassa varsayilan 300ms dolar ve elde ne varsa onunla devam
+edilir — uygulama takilmaz.
+
+Sureyi sen secersin: `warmUp(timeout: 0.5)`. `0` verirsen hicbir sey
+beklenmez.
+
+Bu yalnizca bir goruntu meselesi degil: bekleme penceresi olmadan
+kullanicinin gordugu ilk metin her zaman bir onceki surumun metnidir.
+
 ### Test Mode
+
 
 Panelde bir oturum baslatirsin, cihaz oturuma baglanir ve **yayinlanmamis
 taslak metinleri** gosterir. Panelde bir metni degistirdiginde ya da dili

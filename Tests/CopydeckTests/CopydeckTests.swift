@@ -648,3 +648,94 @@ final class TestModeTests: XCTestCase {
         XCTAssertNil(result, "Test Mode acikken yayinlanmis paket cekilmemeli")
     }
 }
+
+// MARK: - Acilis bekleme penceresi
+
+final class WarmUpTests: XCTestCase {
+    /// timeout 0 verildiginde hicbir sey beklenmemeli.
+    func testZeroTimeoutReturnsImmediately() async {
+        let sdk = Localization()
+        let started = Date()
+
+        await sdk.warmUp(timeout: 0)
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.1)
+    }
+
+    /// configure cagrilmadiysa bekleyecek bir yenileme yok.
+    func testWarmUpWithoutConfigureReturnsImmediately() async {
+        let sdk = Localization()
+        let started = Date()
+
+        await sdk.warmUp(timeout: 5)
+
+        XCTAssertLessThan(
+            Date().timeIntervalSince(started),
+            0.5,
+            "Bekleyecek bir yenileme yokken sure dolmasi beklenmemeli"
+        )
+    }
+
+    /// Yenileme hizli biterse pencere erken kapanmali — bekleme suresinin
+    /// tamamini harcamamali.
+    func testReturnsAsSoonAsRefreshFinishes() async throws {
+        let transport = FakeTransport()
+        transport.stub(
+            path: "/api/sdk/v1/projects/pk_warmup_test/manifest",
+            json: manifestJSON(release: 1)
+        )
+        transport.stub(
+            path: "/api/sdk/v1/projects/pk_warmup_test/releases/1/tr",
+            json: bundleJSON(release: 1, locale: "tr", cta: "Ücretsiz dene")
+        )
+
+        let sdk = Localization()
+        sdk.configure(
+            projectKey: "pk_warmup_test",
+            baseURL: URL(string: "https://example.test")!,
+            locale: "tr",
+            transport: transport
+        )
+
+        let started = Date()
+        await sdk.warmUp(timeout: 5)
+
+        XCTAssertLessThan(
+            Date().timeIntervalSince(started),
+            1.0,
+            "Sahte tasima aninda donuyor; pencere de aninda kapanmali"
+        )
+        XCTAssertEqual(sdk.currentRelease, 1)
+
+        LocalizationCache(projectKey: "pk_warmup_test").clear(locale: "tr")
+    }
+
+    /// Yenileme uzun surerse pencere yine de kapanmali.
+    func testGivesUpAfterTimeout() async {
+        let transport = SlowTransport()
+
+        let sdk = Localization()
+        sdk.configure(
+            projectKey: "pk_warmup_slow_test",
+            baseURL: URL(string: "https://example.test")!,
+            locale: "tr",
+            transport: transport
+        )
+
+        let started = Date()
+        await sdk.warmUp(timeout: 0.2)
+        let waited = Date().timeIntervalSince(started)
+
+        XCTAssertGreaterThan(waited, 0.1)
+        XCTAssertLessThan(waited, 2.0, "Sure dolmasina ragmen beklenmeye devam edilmis")
+    }
+}
+
+/// Hicbir zaman zamaninda donmeyen tasima.
+private struct SlowTransport: LocalizationTransport {
+    func get(_ url: URL) async throws -> (Data, HTTPURLResponse) {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+        throw LocalizationError.httpStatus(408)
+    }
+}

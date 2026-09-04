@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.4.0"
+    public static let version = "0.5.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -381,6 +381,54 @@ public final class Localization: @unchecked Sendable {
         lock.withLock { foregroundObserver = token }
     }
     #endif
+
+    /// Ilk render'i kisa bir sure ag icin bekletir.
+    ///
+    /// Cozdugu sorun sudur: cache'te release 4, sunucuda 5 varsa uygulama
+    /// once 4'u cizer, ~200ms sonra 5 gelir ve metin gozun onunde degisir.
+    /// Bu her publish'ten sonraki her acilista olur.
+    ///
+    /// Normal baglantida manifest 100-150ms'de donuyor, yani bu pencereyle
+    /// ziplama hic gorunmez. Ag yoksa ya da yavassa sure dolar ve elde ne
+    /// varsa onunla devam edilir — uygulama takilmaz.
+    ///
+    ///     await Localization.shared.warmUp()
+    ///
+    /// `timeout` 0 verilirse hicbir sey beklenmez; bu, bu fonksiyon hic
+    /// cagrilmamis gibi davranmaktir.
+    ///
+    /// Hata firlatmaz: acilisi bir ag hatasina baglamanin anlami yok.
+    public func warmUp(timeout: TimeInterval = 0.3) async {
+        guard timeout > 0 else { return }
+
+        // Yeni bir istek baslatmiyoruz: configure zaten birini baslatti.
+        // Ikincisi ayni manifest'i bosuna cekerdi.
+        let pending = lock.withLock { refreshTask }
+
+        guard let pending else { return }
+
+        let gate = WarmUpGate()
+
+        let waiter = Task {
+            await pending.value
+            gate.finish()
+        }
+
+        let timer = Task {
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            gate.finish()
+        }
+
+        await gate.wait()
+
+        timer.cancel()
+
+        // waiter bilerek iptal edilmiyor: yenileme arka planda tamamlanip
+        // metni guncellemeli. Yalnizca beklemekten vazgectik.
+        _ = waiter
+
+        Copydeck.log("acilis: bekleme penceresi kapandi")
+    }
 
     /// Elle yenileme. Normalde gerekmez — SDK uygulama one geldiginde
     /// kendisi yeniliyor.
