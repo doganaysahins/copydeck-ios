@@ -4,9 +4,13 @@ import Foundation
 import Combine
 #endif
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.1.1"
+    public static let version = "0.1.2"
 
     static var userAgent: String {
         #if os(iOS)
@@ -24,15 +28,23 @@ public enum Copydeck {
 #if canImport(Combine)
 /// SwiftUI'nin dinledigi nesne.
 ///
-/// docs/IOS_SDK.md §9: `.localize` duz String dondugu icin yeni paket
-/// geldiginde SwiftUI'nin yeniden degerlendirmesi gerekir. Paket her
-/// degistiginde `version` artar; root view bunu observe eder.
-@MainActor
+/// `.localize` duz String dondugu icin yeni paket geldiginde SwiftUI'nin
+/// yeniden degerlendirmesi gerekir. Paket her degistiginde `version` artar.
+///
+/// Cogu uygulamanin buna dogrudan dokunmasi gerekmez: `CopyText` ve
+/// `.copydeckUpdates()` bunu kendi icinde yapar.
 public final class LocalizationObserver: ObservableObject {
     @Published public private(set) var version: Int = 0
 
     func invalidate() {
-        version &+= 1
+        // SwiftUI @Published degisikliklerini ana thread'de bekliyor.
+        if Thread.isMainThread {
+            version &+= 1
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.version &+= 1
+            }
+        }
     }
 }
 #endif
@@ -54,10 +66,10 @@ public final class Localization: @unchecked Sendable {
     private var cache: LocalizationCache?
     private var activeLocale: String?
     private var refreshTask: Task<Void, Never>?
+    private var foregroundObserver: NSObjectProtocol?
 
     #if canImport(Combine)
-    /// `@StateObject private var localization = Localization.shared.observer`
-    @MainActor public private(set) lazy var observer = LocalizationObserver()
+    public let observer = LocalizationObserver()
     #endif
 
     init() {}
@@ -105,10 +117,35 @@ public final class Localization: @unchecked Sendable {
             store.apply(cached)
         }
 
+        #if canImport(UIKit)
+        // Uygulama one geldiginde yeni release'i SDK kendisi ariyor.
+        // Bunu cagiran tarafa biraktigimizda her entegrasyonun ayni sey
+        // icin ayni kodu yazmasi gerekiyordu.
+        registerForegroundRefresh()
+        #endif
+
         refreshInBackground()
     }
 
-    /// Uygulama one geldiginde cagrilir.
+    #if canImport(UIKit)
+    private func registerForegroundRefresh() {
+        let alreadyRegistered = lock.withLock { foregroundObserver != nil }
+        guard !alreadyRegistered else { return }
+
+        let token = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.refreshInBackground()
+        }
+
+        lock.withLock { foregroundObserver = token }
+    }
+    #endif
+
+    /// Elle yenileme. Normalde gerekmez — SDK uygulama one geldiginde
+    /// kendisi yeniliyor.
     public func refreshInBackground() {
         lock.withLock {
             refreshTask?.cancel()
@@ -192,9 +229,7 @@ public final class Localization: @unchecked Sendable {
 
     private func notifyUI() {
         #if canImport(Combine)
-        Task { @MainActor [weak self] in
-            self?.observer.invalidate()
-        }
+        observer.invalidate()
         #endif
     }
 }

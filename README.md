@@ -43,34 +43,41 @@ Localization.shared.configure(
 )
 ```
 
-Metin:
+Hepsi bu. Uygulama one geldiginde yeni surumu SDK kendisi ariyor; kok
+gorunumde kurulum yok.
+
+Metin icin `CopyText`:
 
 ```swift
-Text("paywall.title".localize)
-Text("paywall.title".localize(fallback: "Unlock Premium"))
+CopyText("paywall.title")
+CopyText("paywall.title", fallback: "Unlock Premium")
+
+CopyText("paywall.title")
+    .font(.largeTitle.bold())
+```
+
+`Text` gibi davranir ve **kendi kendini tazeler** — yeni bir paket
+yayinlandiginda hicbir sey yapman gerekmez.
+
+`Text` tipinin kendisi gerektiginde (`Button` basligi, `Label`, uyari
+mesajlari, SwiftUI disi kod) `.localize` var:
+
+```swift
 Button("paywall.cta.start_trial".localize) { startTrial() }
 ```
 
-Uygulama one geldiginde:
+`.localize` duz `String` donduruyor, yani SwiftUI o metnin degistigini
+kendiliginden bilemez — gozlemleyecek bir nesne yok. Bu yuzden `.localize`'i
+yaygin kullanan gorunumlerin kokune tek satir eklenir:
 
 ```swift
-Localization.shared.refreshInBackground()
-```
-
-SwiftUI'nin yeni paketi gormesi icin root view store'u observe etmeli.
-`.localize` duz `String` donduruyor, yani SwiftUI kendiliginden metnin
-degistigini bilemez:
-
-```swift
-struct RootView: View {
-    @StateObject private var localization = Localization.shared.observer
-
-    var body: some View {
-        PaywallView()
-            .id(localization.version)
-    }
+WindowGroup {
+    PaywallView()
+        .copydeckUpdates()
 }
 ```
+
+`CopyText` kullaniyorsan buna da gerek yok.
 
 ## Davranis kurallari
 
