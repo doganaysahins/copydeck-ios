@@ -141,7 +141,36 @@ kullaniyor, yani alt agacin kimligini degistirip onu yok ediyor ve yeniden
 kuruyor. `@State` sifirlanir, scroll basa doner, kullanicinin doldurdugu form
 bosalir. Kokte kullanma.
 
+## Bir sey beklendigi gibi calismadiginda
+
+```swift
+Copydeck.isLoggingEnabled = true
+```
+
+Konsola hangi adimda ne oldugunu yazar:
+
+```
+[Copydeck] acilis: diskten tr v3, 2 key
+[Copydeck] yenileme gereksiz: zaten tr v3
+[Copydeck] test: oturuma baglaniliyor
+[Copydeck] test: tr rev 1868744125, 2 key uygulaniyor
+[Copydeck] test: degisiklik yok (rev 1868744125)
+```
+
+Varsayilan kapali: bir SDK, entegre edildigi uygulamanin loguna davetsiz
+yazmaz.
+
+En sik karsilasilan iki durum ve loglarda nasil gorundukleri:
+
+- **Test Mode'da metin degismiyor.** Oturumun dili ile duzenledigin dil ayni
+  mi? Log `test: en rev ...` diyorsa cihaz Ingilizce gosteriyordur ve Turkce
+  degeri degistirmen ekranda bir sey degistirmez.
+- **Acilista metinler ziplayip degisiyor.** Log `acilis: diskte kayitli dil
+  yok` diyorsa ilk render fallback ile cikmistir; bu yalnizca uygulamanin
+  hayatindaki ilk acilista ya da proje anahtari degistiginde olur.
+
 ## Davranis kurallari
+
 
 Bunlar tasarim karari, tesaduf degil:
 

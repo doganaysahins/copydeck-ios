@@ -10,7 +10,23 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.3.0"
+    public static let version = "0.3.1"
+
+    /// Konsola tani bilgisi yazar.
+    ///
+    /// Varsayilan kapali: bir SDK, entegre edildigi uygulamanin loguna
+    /// davetsiz yazmaz. Bir sey beklendigi gibi calismadiginda aciliyor ve
+    /// hangi adimda ne oldugu gorunur oluyor - "neden degismedi" sorusunu
+    /// tahminle degil kayitla cevapliyoruz.
+    ///
+    ///     Copydeck.isLoggingEnabled = true
+    public static var isLoggingEnabled = false
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard isLoggingEnabled else { return }
+
+        print("[Copydeck] \(message())")
+    }
 
     /// Varsayilan sunucu.
     ///
@@ -154,6 +170,9 @@ public final class Localization: @unchecked Sendable {
         // olabilir). Sorun degil: manifest gelince dogrusuna gecilir. Bir
         // acilislik gecikme, her acilista ziplamaya yeglenir.
         if let startupLocale, let cached = cache.load(locale: startupLocale) {
+            Copydeck.log(
+                "acilis: diskten \(cached.locale) v\(cached.release), \(cached.strings.count) key"
+            )
             lock.withLock { publishedBundle = cached }
             // notifyUI cagrilmiyor: store ilk render'dan once doluyor.
             // Burada observer'i tetiklemek gorunumu bos yere yeniden
@@ -167,6 +186,12 @@ public final class Localization: @unchecked Sendable {
         // icin ayni kodu yazmasi gerekiyordu.
         registerForegroundRefresh()
         #endif
+
+        if startupLocale == nil {
+            Copydeck.log("acilis: diskte kayitli dil yok, ilk render fallback ile cikacak")
+        } else if cache.load(locale: startupLocale!) == nil {
+            Copydeck.log("acilis: \(startupLocale!) icin disk cache yok")
+        }
 
         refreshInBackground()
 
@@ -219,6 +244,12 @@ public final class Localization: @unchecked Sendable {
     }
 
     public func startTestMode(token: String) {
+        // Sayac gorevden once sifirlaniyor: gorev hemen calismaya basliyor ve
+        // ilk turu bittikten sonra sifirlarsak o turun sonucu unutulur.
+        lock.withLock { previewRevision = nil }
+
+        Copydeck.log("test: oturuma baglaniliyor")
+
         let task = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -241,7 +272,6 @@ public final class Localization: @unchecked Sendable {
         lock.withLock {
             previewTask?.cancel()
             previewTask = task
-            previewRevision = nil
         }
     }
 
@@ -263,7 +293,14 @@ public final class Localization: @unchecked Sendable {
         // degisecek bir sey yok.
         let unchanged = lock.withLock { previewRevision == state.revision }
 
-        guard !unchanged else { return }
+        guard !unchanged else {
+            Copydeck.log("test: degisiklik yok (rev \(state.revision))")
+            return
+        }
+
+        Copydeck.log(
+            "test: \(state.locale) rev \(state.revision), \(state.strings.count) key uygulaniyor"
+        )
 
         lock.withLock { previewRevision = state.revision }
 
@@ -282,6 +319,8 @@ public final class Localization: @unchecked Sendable {
     }
 
     func leaveTestMode() {
+        Copydeck.log("test: oturum kapandi, yayinlanmis hale donuluyor")
+
         let published = lock.withLock { () -> LocalizationBundle? in
             previewTask?.cancel()
             previewTask = nil
@@ -337,7 +376,10 @@ public final class Localization: @unchecked Sendable {
         // Test Mode acikken yayinlanmis paket uygulanmaz. Cihazda taslak
         // gorunuyor; uygulama one geldiginde tetiklenen yenileme onu silip
         // atardi ve QA baktigi metni kaybederdi.
-        if lock.withLock({ previewTask != nil }) { return nil }
+        if lock.withLock({ previewTask != nil }) {
+            Copydeck.log("yenileme atlandi: Test Mode acik")
+            return nil
+        }
 
         let (client, cache, pinnedLocale) = lock.withLock {
             (self.client, self.cache, self.activeLocale)
@@ -366,8 +408,14 @@ public final class Localization: @unchecked Sendable {
         }
 
         if store.release == manifest.release, store.locale == locale {
+            Copydeck.log("yenileme gereksiz: zaten \(locale) v\(manifest.release)")
             return nil
         }
+
+        Copydeck.log(
+            "yenileme: \(store.locale ?? "-") v\(store.release.map(String.init) ?? "-")"
+                + " -> \(locale) v\(manifest.release)"
+        )
 
         let bundle = try await client.fetchBundle(release: manifest.release, locale: locale)
 
