@@ -43,19 +43,39 @@ Localization.shared.configure(projectKey: "pk_live_...")
 Sunucu adresi istenmiyor: o bizim altyapi detayimiz. Kendi sunucunu
 kullaniyorsan `baseURL:` ile gecebilirsin.
 
-### Gelistirme sirasinda canli gormek
+### Test Mode
+
+Panelde bir oturum baslatirsin, cihaz oturuma baglanir ve **yayinlanmamis
+taslak metinleri** gosterir. Panelde bir metni degistirdiginde ya da dili
+degistirdiginde acik ekran yaklasik bir saniye icinde guncellenir.
 
 ```swift
-Localization.shared.configure(projectKey: "pk_live_...", testMode: true)
+Localization.shared.startTestMode(token: kod)   // panelde QR olarak gorunur
+Localization.shared.stopTestMode()
 ```
 
-Iki saniyede bir sunucuya sorar, yani panelde Publish'e bastiginda degisikligi
-uygulamayi arka plana atmadan gorursun.
+Uc kural:
 
-Yalnizca **yayinlanmis** icerigi gosterir — taslak metinleri degil. Panelden
-QR ile baslatilan oturum tabanli Test Mode ayri bir is.
+- **Taslak metin diske yazilmaz.** Yazilsaydi oturum bittikten sonra da
+  cihazda kalir, yani yayinlanmamis metin gercek kullanicinin karsisina
+  cikardi.
+- **Oturum acikken normal yenileme calismaz.** Uygulama one geldiginde
+  tetiklenen yenileme taslagi silip atardi.
+- **Oturum bitince cihaz yayinlanmis hale doner** — panelden bitirsen de,
+  suresi dolsa da.
 
-Uretim derlemesinde acik birakma; `stopTestMode()` ile kapatilir.
+### Gelistirme sirasinda canli gormek
+
+Test Mode'dan farkli: bu yalnizca **yayinlanmis** icerigi izler, oturum
+gerektirmez.
+
+```swift
+Localization.shared.configure(projectKey: "pk_live_...", livePolling: true)
+```
+
+Iki saniyede bir sorar, yani Publish'e bastiginda degisikligi uygulamayi arka
+plana atmadan gorursun. Uretim derlemesinde acik birakma;
+`stopLivePolling()` ile kapatilir.
 
 Hepsi bu. Uygulama one geldiginde yeni surumu SDK kendisi ariyor; kok
 gorunumde kurulum yok.

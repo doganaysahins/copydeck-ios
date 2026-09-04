@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.2.0"
+    public static let version = "0.3.0"
 
     /// Varsayilan sunucu.
     ///
@@ -78,10 +78,22 @@ public final class Localization: @unchecked Sendable {
     private var activeLocale: String?
     private var refreshTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
+    private var previewTask: Task<Void, Never>?
+    private var previewRevision: Int?
     private var foregroundObserver: NSObjectProtocol?
 
-    /// Test modunda iki sorgu arasindaki sure.
+    /// Yayinlanmis icerigi izleyen gelistirme sorgusu.
     private static let pollInterval: UInt64 = 2_000_000_000
+
+    /// Test Mode sorgusu. docs/IMPLEMENTATION_PLAN.md Faz 25: panelden dil
+    /// degistirildiginde acik ekran yaklasik bir saniye icinde donmeli.
+    private static let previewInterval: UInt64 = 1_000_000_000
+
+    /// Test Mode acilmadan once gorunen yayinlanmis paket.
+    ///
+    /// Oturum bittiginde geri yuklemek icin saklaniyor: taslak metin
+    /// cihazda kalmamali.
+    private var publishedBundle: LocalizationBundle?
 
     #if canImport(Combine)
     public let observer = LocalizationObserver()
@@ -100,19 +112,20 @@ public final class Localization: @unchecked Sendable {
     ///   - baseURL: Kendi sunucunu kullaniyorsan. Normalde bos birakilir.
     ///   - locale: Dili sabitlemek istersen. Bos birakilirsa cihazin dili
     ///     projenin dilleriyle eslestirilir.
-    ///   - testMode: Gelistirme sirasinda panelde yayinladigin degisikligi
-    ///     uygulamayi arka plana atmadan gormek icin. Iki saniyede bir
-    ///     sunucuya sorar.
+    ///   - livePolling: Gelistirme sirasinda panelde yayinladigin
+    ///     degisikligi uygulamayi arka plana atmadan gormek icin. Iki
+    ///     saniyede bir sunucuya sorar.
     ///
-    ///     Yalnizca **yayinlanmis** icerigi gosterir; taslak metinleri degil.
-    ///     Panelden QR ile baslatilan oturum tabanli Test Mode ayri bir is.
+    ///     Yalnizca **yayinlanmis** icerigi gosterir. Panelden baslatilan,
+    ///     taslak metinleri gosteren Test Mode ayri bir is:
+    ///     `startTestMode(token:)`.
     ///
     ///     Uretim derlemesinde acik birakma.
     public func configure(
         projectKey: String,
         baseURL: URL? = nil,
         locale: String? = nil,
-        testMode: Bool = false,
+        livePolling: Bool = false,
         transport: LocalizationTransport = URLSessionTransport()
     ) {
         let baseURL = baseURL ?? Copydeck.defaultBaseURL
@@ -141,6 +154,7 @@ public final class Localization: @unchecked Sendable {
         // olabilir). Sorun degil: manifest gelince dogrusuna gecilir. Bir
         // acilislik gecikme, her acilista ziplamaya yeglenir.
         if let startupLocale, let cached = cache.load(locale: startupLocale) {
+            lock.withLock { publishedBundle = cached }
             // notifyUI cagrilmiyor: store ilk render'dan once doluyor.
             // Burada observer'i tetiklemek gorunumu bos yere yeniden
             // olusturur — icerik zaten dogru.
@@ -156,7 +170,7 @@ public final class Localization: @unchecked Sendable {
 
         refreshInBackground()
 
-        if testMode {
+        if livePolling {
             startPolling()
         }
     }
@@ -181,12 +195,107 @@ public final class Localization: @unchecked Sendable {
         }
     }
 
-    /// Test modunu kapatir. Eldeki metinler oldugu gibi kalir.
-    public func stopTestMode() {
+    /// Gelistirme sorgusunu kapatir. Eldeki metinler oldugu gibi kalir.
+    public func stopLivePolling() {
         lock.withLock {
             pollTask?.cancel()
             pollTask = nil
         }
+    }
+
+    // MARK: - Test Mode
+
+    /// Panelden baslatilan Test Mode oturumuna baglanir.
+    ///
+    /// Token panelde QR olarak gorunur. Oturum boyunca cihaz **yayinlanmamis**
+    /// taslak metinleri gosterir ve panelde yapilan her degisiklik yaklasik
+    /// bir saniye icinde ekrana duser.
+    ///
+    /// Taslak metinler diske yazilmaz. Yazilsaydi oturum bittikten sonra da
+    /// cihazda kalirlardi — yani QA seansi biter, yayinlanmamis metin
+    /// kullanicinin karsisina cikardi.
+    public var isTestModeActive: Bool {
+        lock.withLock { previewTask != nil }
+    }
+
+    public func startTestMode(token: String) {
+        let task = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+
+                do {
+                    try await self.pollPreview(token: token)
+                } catch LocalizationError.httpStatus(404) {
+                    // Oturum panelden bitirildi ya da suresi doldu.
+                    // Yayinlanmis hale don ve dongusu kapat.
+                    self.leaveTestMode()
+                    return
+                } catch {
+                    // Gecici ag hatasi: bir sonraki turda yeniden denenir.
+                }
+
+                try? await Task.sleep(nanoseconds: Localization.previewInterval)
+            }
+        }
+
+        lock.withLock {
+            previewTask?.cancel()
+            previewTask = task
+            previewRevision = nil
+        }
+    }
+
+    /// Test Mode'u kapatir ve cihazi yayinlanmis hale dondurur.
+    public func stopTestMode() {
+        leaveTestMode()
+    }
+
+    // Testler bu ikisini dogrudan cagiriyor: aksi halde her testin bir
+    // saniyelik sorgu turunu beklemesi gerekirdi.
+    func pollPreview(token: String) async throws {
+        let client = lock.withLock { self.client }
+
+        guard let client else { throw LocalizationError.notConfigured }
+
+        let state = try await client.fetchPreview(token: token)
+
+        // Sunucu revision'i icerikten turetiyor: ayni degerse ekranda
+        // degisecek bir sey yok.
+        let unchanged = lock.withLock { previewRevision == state.revision }
+
+        guard !unchanged else { return }
+
+        lock.withLock { previewRevision = state.revision }
+
+        // release 0: bu icerik yayinlanmadi, bir surum numarasi yok.
+        let draft = LocalizationBundle(
+            schemaVersion: LocalizationSchema.supportedVersion,
+            release: 0,
+            locale: state.locale,
+            strings: state.strings
+        )
+
+        // Yalnizca bellege. cache.save cagrilmiyor, kasitli.
+        if store.apply(draft) {
+            notifyUI()
+        }
+    }
+
+    func leaveTestMode() {
+        let published = lock.withLock { () -> LocalizationBundle? in
+            previewTask?.cancel()
+            previewTask = nil
+            previewRevision = nil
+
+            return publishedBundle
+        }
+
+        if let published, store.apply(published) {
+            notifyUI()
+        }
+
+        // Elde yayinlanmis paket yoksa ya da eskiyse sunucudan al.
+        refreshInBackground()
     }
 
     #if canImport(UIKit)
@@ -225,6 +334,11 @@ public final class Localization: @unchecked Sendable {
     /// calismaz: sunucu v3'ten v1'e dondugunde cihaz v3'te kalirdi.
     @discardableResult
     public func refresh() async throws -> LocalizationBundle? {
+        // Test Mode acikken yayinlanmis paket uygulanmaz. Cihazda taslak
+        // gorunuyor; uygulama one geldiginde tetiklenen yenileme onu silip
+        // atardi ve QA baktigi metni kaybederdi.
+        if lock.withLock({ previewTask != nil }) { return nil }
+
         let (client, cache, pinnedLocale) = lock.withLock {
             (self.client, self.cache, self.activeLocale)
         }
@@ -267,6 +381,8 @@ public final class Localization: @unchecked Sendable {
         // ayrisirsa bir sonraki acilista eski metne donulur.
         try cache.save(bundle)
         cache.saveLastLocale(bundle.locale)
+
+        lock.withLock { publishedBundle = bundle }
 
         // UI yalnizca icerik gercekten degistiyse tazeleniyor.
         if store.apply(bundle) {

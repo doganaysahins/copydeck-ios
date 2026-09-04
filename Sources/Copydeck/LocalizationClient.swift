@@ -58,6 +58,29 @@ struct LocalizationClient: Sendable {
         }
     }
 
+    /// Test Mode oturumunun hali.
+    ///
+    /// Token burada kimlik yerine geciyor: sahadaki cihazin kullanicisi yok,
+    /// elinde yalnizca QR'dan okudugu deger var. Token yalnizca taslak
+    /// okumaya yariyor, hicbir seyi degistiremiyor.
+    func fetchPreview(token: String) async throws -> PreviewState {
+        let url = baseURL
+            .appendingPathComponent("api/sdk/v1/preview")
+            .appendingPathComponent(token)
+
+        let (data, response) = try await transport.get(url)
+
+        guard response.statusCode == 200 else {
+            throw LocalizationError.httpStatus(response.statusCode)
+        }
+
+        do {
+            return try decoder.decode(PreviewState.self, from: data)
+        } catch {
+            throw LocalizationError.decodingFailed
+        }
+    }
+
     func fetchBundle(release: Int, locale: String) async throws -> LocalizationBundle {
         let url = baseURL
             .appendingPathComponent("api/sdk/v1/projects")

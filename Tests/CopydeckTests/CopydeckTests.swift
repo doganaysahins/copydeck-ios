@@ -509,3 +509,142 @@ final class StartupTests: XCTestCase {
         XCTAssertTrue(store.apply(next))
     }
 }
+
+// MARK: - Test Mode
+
+private func previewJSON(revision: Int, locale: String, cta: String) -> String {
+    """
+    {"locale":"\(locale)","sourceLocale":"en","availableLocales":["en","tr"],
+     "revision":\(revision),"strings":{"paywall.cta.start_trial":"\(cta)"}}
+    """
+}
+
+/// docs/IMPLEMENTATION_PLAN.md Faz 24: test state production disk cache'ini
+/// degistirmez. Bu sinif o kuralin nobetcisi.
+final class TestModeTests: XCTestCase {
+    private let projectKey = "pk_preview_test"
+    private let previewPath = "/api/sdk/v1/preview/tok"
+
+    private var cache: LocalizationCache { LocalizationCache(projectKey: projectKey) }
+
+    override func tearDown() {
+        cache.clear(locale: "tr")
+        super.tearDown()
+    }
+
+    private func published() -> LocalizationBundle {
+        LocalizationBundle(
+            schemaVersion: 1,
+            release: 5,
+            locale: "tr",
+            strings: ["paywall.cta.start_trial": "Ücretsiz dene"]
+        )
+    }
+
+    private func makeSDK(_ transport: FakeTransport) -> Localization {
+        let sdk = Localization()
+        sdk.configure(
+            projectKey: projectKey,
+            baseURL: URL(string: "https://example.test")!,
+            locale: "tr",
+            transport: transport
+        )
+        return sdk
+    }
+
+    /// Taslak metin ekranda gorunur ama diske yazilmaz. Yazilsaydi oturum
+    /// bittikten sonra da cihazda kalir, yani yayinlanmamis metin gercek
+    /// kullanicinin karsisina cikardi.
+    func testDraftIsShownButNeverWrittenToDisk() async throws {
+        try cache.save(published())
+        cache.saveLastLocale("tr")
+
+        let transport = FakeTransport()
+        transport.stub(
+            path: previewPath,
+            json: previewJSON(revision: 11, locale: "tr", cta: "Taslak metin")
+        )
+
+        let sdk = makeSDK(transport)
+        try await sdk.pollPreview(token: "tok")
+
+        XCTAssertEqual(
+            sdk.string(forKey: "paywall.cta.start_trial", fallback: nil),
+            "Taslak metin"
+        )
+
+        XCTAssertEqual(
+            cache.load(locale: "tr"),
+            published(),
+            "Disk cache taslak metinle degistirilmis"
+        )
+    }
+
+    /// Oturum bitince cihaz yayinlanmis hale doner.
+    func testFinishingRestoresPublishedCopy() async throws {
+        try cache.save(published())
+        cache.saveLastLocale("tr")
+
+        let transport = FakeTransport()
+        transport.stub(
+            path: previewPath,
+            json: previewJSON(revision: 12, locale: "tr", cta: "Taslak metin")
+        )
+
+        let sdk = makeSDK(transport)
+        try await sdk.pollPreview(token: "tok")
+        XCTAssertEqual(sdk.string(forKey: "paywall.cta.start_trial", fallback: nil), "Taslak metin")
+
+        sdk.leaveTestMode()
+
+        XCTAssertEqual(
+            sdk.string(forKey: "paywall.cta.start_trial", fallback: nil),
+            "Ücretsiz dene"
+        )
+    }
+
+    /// Ayni revision tekrar gelirse gorunum tazelenmez.
+    func testSameRevisionIsNotReapplied() async throws {
+        let transport = FakeTransport()
+        transport.stub(
+            path: previewPath,
+            json: previewJSON(revision: 13, locale: "tr", cta: "Taslak metin")
+        )
+
+        let sdk = makeSDK(transport)
+
+        try await sdk.pollPreview(token: "tok")
+        try await sdk.pollPreview(token: "tok")
+
+        XCTAssertEqual(
+            transport.requested.filter { $0 == previewPath }.count,
+            2,
+            "Her turda sorulmali"
+        )
+        XCTAssertEqual(sdk.string(forKey: "paywall.cta.start_trial", fallback: nil), "Taslak metin")
+    }
+
+    /// Test Mode acikken uygulama one geldiginde tetiklenen yenileme
+    /// taslagi silip atmamali.
+    func testRefreshIsSkippedWhileTestModeIsActive() async throws {
+        let transport = FakeTransport()
+        transport.stub(
+            path: previewPath,
+            json: previewJSON(revision: 14, locale: "tr", cta: "Taslak metin")
+        )
+        transport.stub(
+            path: "/api/sdk/v1/projects/\(projectKey)/manifest",
+            json: manifestJSON(release: 9)
+        )
+
+        let sdk = makeSDK(transport)
+        sdk.startTestMode(token: "tok")
+        defer { sdk.stopTestMode() }
+
+        XCTAssertTrue(sdk.isTestModeActive)
+
+        let result = try await sdk.refresh()
+
+        XCTAssertNil(result, "Test Mode acikken yayinlanmis paket cekilmemeli")
+    }
+}
