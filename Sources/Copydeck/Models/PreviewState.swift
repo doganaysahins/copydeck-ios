@@ -13,18 +13,26 @@ public struct PreviewState: Codable, Equatable, Sendable {
     public let revision: Int
     public let strings: [String: String]
 
+    /// Panelde secilen key; cihaz o metni cerceveliyor.
+    ///
+    /// Revision a girmiyor: vurgu icerigin parcasi degil ve degistiginde
+    /// metinlerin yeniden uygulanmasina yol acmamali.
+    public let highlightedKey: String?
+
     public init(
         locale: String,
         sourceLocale: String,
         availableLocales: [String],
         revision: Int,
-        strings: [String: String]
+        strings: [String: String],
+        highlightedKey: String? = nil
     ) {
         self.locale = locale
         self.sourceLocale = sourceLocale
         self.availableLocales = availableLocales
         self.revision = revision
         self.strings = strings
+        self.highlightedKey = highlightedKey
     }
 }
 

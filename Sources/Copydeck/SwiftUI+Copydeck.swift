@@ -35,6 +35,16 @@ public struct CopyText: View {
             // gitmesini gozleyemezsin.
             .onAppear { Localization.shared.noteAppeared(key) }
             .onDisappear { Localization.shared.noteDisappeared(key) }
+            // Cerceve overlay ile ciziliyor, kenarlik ekleyerek degil:
+            // kenarlik metnin boyutunu degistirir ve duzeni oynatir. QA nin
+            // baktigi ekrani vurgunun kendisi bozmamali.
+            .overlay {
+                if Localization.shared.isHighlighted(key) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.orange, lineWidth: 2)
+                        .padding(-3)
+                }
+            }
     }
 }
 

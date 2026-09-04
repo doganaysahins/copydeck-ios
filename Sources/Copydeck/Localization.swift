@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.7.0"
+    public static let version = "0.8.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -98,6 +98,7 @@ public final class Localization: @unchecked Sendable {
     private var previewTask: Task<Void, Never>?
     private var previewRevision: Int?
     private var testMode: TestModeState = .off
+    private var highlighted: String?
     private var foregroundObserver: NSObjectProtocol?
 
     /// Yayinlanmis icerigi izleyen gelistirme sorgusu.
@@ -105,7 +106,7 @@ public final class Localization: @unchecked Sendable {
 
     /// Test Mode sorgusu. docs/IMPLEMENTATION_PLAN.md Faz 25: panelden dil
     /// degistirildiginde acik ekran yaklasik bir saniye icinde donmeli.
-    private static let previewInterval: UInt64 = 1_000_000_000
+    private static let previewInterval: UInt64 = 500_000_000
 
     /// Test Mode acilmadan once gorunen yayinlanmis paket.
     ///
@@ -244,6 +245,15 @@ public final class Localization: @unchecked Sendable {
         reporter.disappeared(key)
     }
 
+    /// Panelde secilmis metin mi.
+    ///
+    /// `CopyText` bunu okuyup kendini cerceveliyor. `@Localized` bunu
+    /// yapamaz: duz `String` donduruyor ve bir String in etrafina cerceve
+    /// cizilemez.
+    public func isHighlighted(_ key: String) -> Bool {
+        lock.withLock { highlighted == key }
+    }
+
     // MARK: - Test Mode
 
     /// Panelden baslatilan Test Mode oturumuna baglanir.
@@ -331,6 +341,19 @@ public final class Localization: @unchecked Sendable {
         // Dil degistiyse bu dilde hicbir sey gorulmemis sayilir.
         reporter.localeChanged(to: state.locale)
 
+        // Vurgu revision dan bagimsiz ele aliniyor: icerigin parcasi degil,
+        // asagidaki kisa devreye takilirsa panelde tiklamak hicbir sey
+        // yapmazdi.
+        let highlightChanged = lock.withLock { () -> Bool in
+            guard highlighted != state.highlightedKey else { return false }
+
+            highlighted = state.highlightedKey
+
+            return true
+        }
+
+        if highlightChanged { notifyUI() }
+
         // Sunucu revision'i icerikten turetiyor: ayni degerse ekranda
         // degisecek bir sey yok.
         let unchanged = lock.withLock { previewRevision == state.revision }
@@ -375,6 +398,7 @@ public final class Localization: @unchecked Sendable {
             previewTask?.cancel()
             previewTask = nil
             previewRevision = nil
+            highlighted = nil
             testMode = .off
 
             return publishedBundle
