@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.9.0"
+    public static let version = "0.10.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -100,6 +100,7 @@ public final class Localization: @unchecked Sendable {
     private var testMode: TestModeState = .off
     private var highlighted: String?
     private var previewToken: String?
+    private var showsTestBar = true
     private var foregroundObserver: NSObjectProtocol?
 
     /// Yayinlanmis icerigi izleyen gelistirme sorgusu.
@@ -141,13 +142,19 @@ public final class Localization: @unchecked Sendable {
     ///     `startTestMode(token:)`.
     ///
     ///     Uretim derlemesinde acik birakma.
+    ///   - showsTestBar: Test Mode acikken QA cubugunu SDK kendi
+    ///     penceresinde gosterir. Kendin yerlestirmek istiyorsan `false`
+    ///     verip `.copydeckTestBar()` kullan.
     public func configure(
         projectKey: String,
         baseURL: URL? = nil,
         locale: String? = nil,
         livePolling: Bool = false,
+        showsTestBar: Bool = true,
         transport: LocalizationTransport = URLSessionTransport()
     ) {
+        lock.withLock { self.showsTestBar = showsTestBar }
+
         let baseURL = baseURL ?? Copydeck.defaultBaseURL
         let cache = LocalizationCache(projectKey: projectKey)
         let client = LocalizationClient(
@@ -350,6 +357,18 @@ public final class Localization: @unchecked Sendable {
         await sendReview(action: "nextLocale", comment: nil)
     }
 
+    /// Her sorgu turunda cagriliyor ve idempotent.
+    ///
+    /// Oturum baslarken uygulama henuz one gelmemis olabilir; o anda
+    /// tutunacak bir sahne bulunamaz ve tek denemede pencere hic acilmazdi.
+    private func presentTestBarIfWanted() {
+        guard lock.withLock({ showsTestBar }) else { return }
+
+        #if canImport(UIKit) && !os(watchOS)
+        Task { @MainActor in TestBarWindow.shared.present() }
+        #endif
+    }
+
     private func sendReview(action: String, comment: String?) async -> Bool {
         let (client, token) = lock.withLock { (self.client, self.previewToken) }
 
@@ -400,6 +419,8 @@ public final class Localization: @unchecked Sendable {
         }
 
         if highlightChanged { notifyUI() }
+
+        presentTestBarIfWanted()
 
         // Sunucu revision'i icerikten turetiyor: ayni degerse ekranda
         // degisecek bir sey yok.
@@ -457,6 +478,10 @@ public final class Localization: @unchecked Sendable {
         if let published, store.apply(published) {
             notifyUI()
         }
+
+        #if canImport(UIKit) && !os(watchOS)
+        Task { @MainActor in TestBarWindow.shared.dismiss() }
+        #endif
 
         // Elde yayinlanmis paket yoksa ya da eskiyse sunucudan al.
         refreshInBackground()

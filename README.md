@@ -89,18 +89,26 @@ Localization.shared.startTestMode(token: kod)   // panelde QR olarak gorunur
 Localization.shared.stopTestMode()
 ```
 
-QA cihazdan onaylasin istiyorsan kok gorunume tek satir:
+Oturum acikken uygulamanin altinda bir QA cubugu beliriyor:
+**Approve · Issue · Next**. Onay ekranda gorunen metinlere uygulaniyor,
+"Next" ayni ekranda kalarak bir sonraki dile geciyor. QA telefondan hic
+ayrilmiyor; sonuclar panele akiyor.
+
+**Bunun icin kod yazman gerekmiyor.** SDK cubugu kendi penceresinde
+gosteriyor ve oturum bitince kaldiriyor. Dokunmalar alttaki uygulamaya
+geciyor, yani QA normal sekilde gezinebiliyor.
+
+Uretimde gorunmuyor: acilmasi icin birinin o uygulamaya oturum kodu girmis
+olmasi gerekiyor.
+
+Cubugu kendin yerlestirmek istersen:
 
 ```swift
+Localization.shared.configure(projectKey: "pk_...", showsTestBar: false)
+
 PaywallView()
     .copydeckTestBar()
 ```
-
-Test Mode acikken altta bir cubuk cikiyor: **Approve · Issue · Next**.
-Onay ekranda gorunen metinlere uygulaniyor, "Next" ayni ekranda kalarak bir
-sonraki dile geciyor. Oturum yokken hicbir sey cizilmiyor.
-
-Boylece QA telefondan hic ayrilmiyor; sonuclar panele akiyor.
 
 Uc kural:
 
