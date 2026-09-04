@@ -37,11 +37,25 @@ Acilista bir kere:
 ```swift
 import Copydeck
 
-Localization.shared.configure(
-    projectKey: "pk_live_...",
-    baseURL: URL(string: "https://your-copydeck-instance.vercel.app")!
-)
+Localization.shared.configure(projectKey: "pk_live_...")
 ```
+
+Sunucu adresi istenmiyor: o bizim altyapi detayimiz. Kendi sunucunu
+kullaniyorsan `baseURL:` ile gecebilirsin.
+
+### Gelistirme sirasinda canli gormek
+
+```swift
+Localization.shared.configure(projectKey: "pk_live_...", testMode: true)
+```
+
+Iki saniyede bir sunucuya sorar, yani panelde Publish'e bastiginda degisikligi
+uygulamayi arka plana atmadan gorursun.
+
+Yalnizca **yayinlanmis** icerigi gosterir — taslak metinleri degil. Panelden
+QR ile baslatilan oturum tabanli Test Mode ayri bir is.
+
+Uretim derlemesinde acik birakma; `stopTestMode()` ile kapatilir.
 
 Hepsi bu. Uygulama one geldiginde yeni surumu SDK kendisi ariyor; kok
 gorunumde kurulum yok.

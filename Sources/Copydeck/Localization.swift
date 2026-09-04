@@ -10,7 +10,18 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.1.3"
+    public static let version = "0.2.0"
+
+    /// Varsayilan sunucu.
+    ///
+    /// Adres cagiran taraftan istenmiyor: bu bizim altyapi detayimiz, entegre
+    /// eden gelistiricinin karari degil.
+    ///
+    /// DIKKAT — burasi musterinin binary'sine gomuluyor. Sunucuyu tasimak
+    /// gerektiginde her musterinin yeni surum cikarmasi gerekmesin diye
+    /// buranin bizim yonlendirebildigimiz bir alan adi olmasi sart. Su an
+    /// dogrudan dagitim adresi; ilk dis entegrasyondan once degismeli.
+    public static let defaultBaseURL = URL(string: "https://localize-app-theta.vercel.app")!
 
     static var userAgent: String {
         #if os(iOS)
@@ -66,7 +77,11 @@ public final class Localization: @unchecked Sendable {
     private var cache: LocalizationCache?
     private var activeLocale: String?
     private var refreshTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
     private var foregroundObserver: NSObjectProtocol?
+
+    /// Test modunda iki sorgu arasindaki sure.
+    private static let pollInterval: UInt64 = 2_000_000_000
 
     #if canImport(Combine)
     public let observer = LocalizationObserver()
@@ -80,12 +95,27 @@ public final class Localization: @unchecked Sendable {
     ///
     /// Disk cache senkron yuklenir, boylece ilk render dogru metinle cikar.
     /// Ag istegi arka planda baslar ve donusu beklenmez.
+    /// - Parameters:
+    ///   - projectKey: Panelden alinan yayinlanabilir anahtar (`pk_...`).
+    ///   - baseURL: Kendi sunucunu kullaniyorsan. Normalde bos birakilir.
+    ///   - locale: Dili sabitlemek istersen. Bos birakilirsa cihazin dili
+    ///     projenin dilleriyle eslestirilir.
+    ///   - testMode: Gelistirme sirasinda panelde yayinladigin degisikligi
+    ///     uygulamayi arka plana atmadan gormek icin. Iki saniyede bir
+    ///     sunucuya sorar.
+    ///
+    ///     Yalnizca **yayinlanmis** icerigi gosterir; taslak metinleri degil.
+    ///     Panelden QR ile baslatilan oturum tabanli Test Mode ayri bir is.
+    ///
+    ///     Uretim derlemesinde acik birakma.
     public func configure(
         projectKey: String,
-        baseURL: URL,
+        baseURL: URL? = nil,
         locale: String? = nil,
+        testMode: Bool = false,
         transport: LocalizationTransport = URLSessionTransport()
     ) {
+        let baseURL = baseURL ?? Copydeck.defaultBaseURL
         let cache = LocalizationCache(projectKey: projectKey)
         let client = LocalizationClient(
             baseURL: baseURL,
@@ -125,6 +155,38 @@ public final class Localization: @unchecked Sendable {
         #endif
 
         refreshInBackground()
+
+        if testMode {
+            startPolling()
+        }
+    }
+
+    // MARK: - Test modu
+
+    private func startPolling() {
+        let task = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Localization.pollInterval)
+                guard !Task.isCancelled else { return }
+
+                // Hata yutuluyor: ag kesilirse polling durmamali, bir sonraki
+                // turda yeniden denenir.
+                try? await self?.refresh()
+            }
+        }
+
+        lock.withLock {
+            pollTask?.cancel()
+            pollTask = task
+        }
+    }
+
+    /// Test modunu kapatir. Eldeki metinler oldugu gibi kalir.
+    public func stopTestMode() {
+        lock.withLock {
+            pollTask?.cancel()
+            pollTask = nil
+        }
     }
 
     #if canImport(UIKit)
