@@ -98,6 +98,7 @@ struct LocalizationClient: Sendable {
         let payload: [String: Any] = [
             "visible": report?.visible as Any,
             "newlySeen": report?.newlySeen ?? [],
+            "missingKeys": report?.missing ?? [],
         ]
 
         let body = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)

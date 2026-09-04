@@ -19,6 +19,9 @@ final class PreviewReporter: @unchecked Sendable {
         /// Degismediyse nil: sunucu o zaman ekrandaki listeye dokunmuyor.
         let visible: [String]?
         let newlySeen: [String]
+
+        /// Uygulamanin istedigi ama pakette olmayan key'ler.
+        let missing: [String]
     }
 
     private let lock = NSLock()
@@ -26,6 +29,8 @@ final class PreviewReporter: @unchecked Sendable {
     private var visible: Set<String> = []
     private var lastReportedVisible: Set<String>?
     private var reportedSeen: Set<String> = []
+    private var missing: Set<String> = []
+    private var reportedMissing: Set<String> = []
     private var locale: String?
 
     func appeared(_ key: String) {
@@ -36,6 +41,15 @@ final class PreviewReporter: @unchecked Sendable {
         lock.withLock { visible.remove(key) }
     }
 
+    /// Uygulama bu key'i istedi ama pakette yoktu.
+    ///
+    /// Panel bunu baska turlu ogrenemiyor: kodda hangi key'lerin gectigini
+    /// gormuyor. Gelistirici bir key yazip panele eklemeyi unuttugunda tek
+    /// uyari bu.
+    func noteMissing(_ key: String) {
+        lock.withLock { missing.insert(key) }
+    }
+
     /// Oturumun dili degisti: bu dilde hicbir sey gorulmemis sayilir.
     func localeChanged(to newLocale: String) {
         lock.withLock {
@@ -44,6 +58,11 @@ final class PreviewReporter: @unchecked Sendable {
             locale = newLocale
             reportedSeen = []
             lastReportedVisible = nil
+
+            // Bir key TR'de eksik olabilir ama DE'de olabilir; yeniden
+            // bakilmasi gerekiyor.
+            missing = []
+            reportedMissing = []
         }
     }
 
@@ -52,12 +71,16 @@ final class PreviewReporter: @unchecked Sendable {
         lock.withLock {
             let visibleChanged = lastReportedVisible != visible
             let newlySeen = visible.subtracting(reportedSeen)
+            let newlyMissing = missing.subtracting(reportedMissing)
 
-            guard visibleChanged || !newlySeen.isEmpty else { return nil }
+            guard visibleChanged || !newlySeen.isEmpty || !newlyMissing.isEmpty else {
+                return nil
+            }
 
             return Report(
                 visible: visibleChanged ? visible.sorted() : nil,
-                newlySeen: newlySeen.sorted()
+                newlySeen: newlySeen.sorted(),
+                missing: newlyMissing.sorted()
             )
         }
     }
@@ -71,6 +94,7 @@ final class PreviewReporter: @unchecked Sendable {
             }
 
             reportedSeen.formUnion(report.newlySeen)
+            reportedMissing.formUnion(report.missing)
         }
     }
 
@@ -79,6 +103,8 @@ final class PreviewReporter: @unchecked Sendable {
             visible = []
             lastReportedVisible = nil
             reportedSeen = []
+            missing = []
+            reportedMissing = []
             locale = nil
         }
     }

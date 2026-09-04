@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.6.0"
+    public static let version = "0.7.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -544,7 +544,18 @@ public final class Localization: @unchecked Sendable {
     // MARK: - Lookup
 
     public func string(forKey key: String, fallback: String? = nil) -> String {
-        store.string(forKey: key, fallback: fallback)
+        if let value = store.value(forKey: key) { return value }
+
+        // Pakette yok. Bunu not aliyoruz cunku panel baska turlu
+        // ogrenemiyor: kodda hangi key'lerin gectigini gormuyor.
+        //
+        // Yalnizca eksik durumda kilit aliniyor; bulunan degerlerde
+        // -- yani neredeyse her cagride -- fazladan is yok.
+        reporter.noteMissing(key)
+
+        if let fallback, !fallback.isEmpty { return fallback }
+
+        return key
     }
 
     // MARK: - Durum

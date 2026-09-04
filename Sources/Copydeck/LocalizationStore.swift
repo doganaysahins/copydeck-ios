@@ -62,13 +62,24 @@ final class LocalizationStore: @unchecked Sendable {
     ///
     /// Asla varsayilan olarak bos string donmez.
     func string(forKey key: String, fallback: String?) -> String {
+        if let value = value(forKey: key) { return value }
+        if let fallback, !fallback.isEmpty { return fallback }
+
+        return key
+    }
+
+    /// Bellekteki deger; yoksa ya da bossa nil.
+    ///
+    /// Cagiran taraf "bu key pakette var miydi" sorusunu ancak boyle
+    /// sorabiliyor: string(forKey:fallback:) her zaman bir sey donduruyor
+    /// ve fallback ile gercek degeri ayirt edilemiyor.
+    func value(forKey key: String) -> String? {
         lock.lock()
         let value = strings[key]
         lock.unlock()
 
-        if let value, !value.isEmpty { return value }
-        if let fallback, !fallback.isEmpty { return fallback }
+        guard let value, !value.isEmpty else { return nil }
 
-        return key
+        return value
     }
 }
