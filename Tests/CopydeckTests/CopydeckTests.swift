@@ -432,3 +432,80 @@ final class RefreshTests: XCTestCase {
         XCTAssertEqual(sdk.string(forKey: "paywall.cta.start_trial"), "Start free trial")
     }
 }
+
+// MARK: - Acilis davranisi
+
+/// Bu sinif tek bir hatanin nobetcisi: uygulama her acildiginda once
+/// fallback, sonra ag donunce gercek metin gorunuyordu — yani metinler
+/// zipliyordu. Sebep configure'in diskteki paketi yalnizca locale
+/// sabitlenmisse yuklemesiydi.
+final class StartupTests: XCTestCase {
+    private let projectKey = "pk_startup_test"
+
+    override func tearDown() {
+        LocalizationCache(projectKey: projectKey).clear(locale: "tr")
+        super.tearDown()
+    }
+
+    /// Locale sabitlenmemis olsa bile configure donduğunde metin hazir olmali.
+    func testConfigureLoadsCachedBundleWithoutPinnedLocale() throws {
+        let cache = LocalizationCache(projectKey: projectKey)
+
+        try cache.save(
+            LocalizationBundle(
+                schemaVersion: 1,
+                release: 7,
+                locale: "tr",
+                strings: ["paywall.cta.start_trial": "Ücretsiz dene"]
+            )
+        )
+        cache.saveLastLocale("tr")
+
+        let sdk = Localization()
+        sdk.configure(
+            projectKey: projectKey,
+            baseURL: URL(string: "https://example.test")!,
+            transport: FakeTransport() // stub yok: ag basarisiz olacak
+        )
+
+        // Ag beklenmeden, senkron olarak dogru metin.
+        XCTAssertEqual(
+            sdk.string(forKey: "paywall.cta.start_trial", fallback: "Start free trial"),
+            "Ücretsiz dene"
+        )
+        XCTAssertEqual(sdk.currentRelease, 7)
+    }
+
+    /// Hic cache yoksa fallback gorunur — ilk kurulumun dogru davranisi.
+    func testConfigureWithoutCacheUsesFallback() {
+        let sdk = Localization()
+        sdk.configure(
+            projectKey: "pk_startup_empty_test",
+            baseURL: URL(string: "https://example.test")!,
+            transport: FakeTransport()
+        )
+
+        XCTAssertEqual(
+            sdk.string(forKey: "paywall.title", fallback: "Unlock Premium"),
+            "Unlock Premium"
+        )
+    }
+
+    /// Ayni paket tekrar uygulandiginda UI tazelenmemeli; yoksa gorunum bos
+    /// yere yeniden olusur ve goz kirpar.
+    func testApplyReportsChangeOnlyOnce() {
+        let store = LocalizationStore()
+        let bundle = LocalizationBundle(
+            schemaVersion: 1, release: 3, locale: "tr", strings: ["a": "bir"]
+        )
+
+        XCTAssertTrue(store.apply(bundle))
+        XCTAssertFalse(store.apply(bundle))
+
+        let next = LocalizationBundle(
+            schemaVersion: 1, release: 4, locale: "tr", strings: ["a": "iki"]
+        )
+
+        XCTAssertTrue(store.apply(next))
+    }
+}

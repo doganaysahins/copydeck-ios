@@ -6,7 +6,7 @@ import Combine
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.1.0"
+    public static let version = "0.1.1"
 
     static var userAgent: String {
         #if os(iOS)
@@ -81,18 +81,28 @@ public final class Localization: @unchecked Sendable {
             transport: transport
         )
 
+        // Sabitlenmis locale yoksa diskteki son dili kullan.
+        let startupLocale = locale ?? cache.lastLocale()
+
         lock.withLock {
             self.cache = cache
             self.client = client
             self.activeLocale = locale
         }
 
-        // Bilinen bir locale varsa cache'i hemen yukle. Yoksa manifest
-        // gelene kadar lookup fallback'e duser — bu dogru davranis, cunku
-        // hangi dili okuyacagimizi henuz bilmiyoruz.
-        if let locale, let cached = cache.load(locale: locale) {
+        // Locale sabitlenmemisse en son gosterilen dile don. Cihazin dilini
+        // projenin dillerine eslemek manifest'i, yani agi gerektiriyor; bu
+        // adim olmasa her acilista once fallback, ag donunce gercek metin
+        // gorunur ve metinler ziplar.
+        //
+        // Diskteki dil eskimis olabilir (kullanici cihaz dilini degistirmis
+        // olabilir). Sorun degil: manifest gelince dogrusuna gecilir. Bir
+        // acilislik gecikme, her acilista ziplamaya yeglenir.
+        if let startupLocale, let cached = cache.load(locale: startupLocale) {
+            // notifyUI cagrilmiyor: store ilk render'dan once doluyor.
+            // Burada observer'i tetiklemek gorunumu bos yere yeniden
+            // olusturur — icerik zaten dogru.
             store.apply(cached)
-            notifyUI()
         }
 
         refreshInBackground()
@@ -136,8 +146,8 @@ public final class Localization: @unchecked Sendable {
         if pinnedLocale == nil {
             lock.withLock { activeLocale = locale }
 
-            if store.isEmpty, let cached = cache.load(locale: locale) {
-                store.apply(cached)
+            if store.isEmpty, let cached = cache.load(locale: locale),
+               store.apply(cached) {
                 notifyUI()
             }
         }
@@ -157,9 +167,12 @@ public final class Localization: @unchecked Sendable {
         // Diske yazma basarisiz olursa bellegi de guncelleme: iki taraf
         // ayrisirsa bir sonraki acilista eski metne donulur.
         try cache.save(bundle)
+        cache.saveLastLocale(bundle.locale)
 
-        store.apply(bundle)
-        notifyUI()
+        // UI yalnizca icerik gercekten degistiyse tazeleniyor.
+        if store.apply(bundle) {
+            notifyUI()
+        }
 
         return bundle
     }

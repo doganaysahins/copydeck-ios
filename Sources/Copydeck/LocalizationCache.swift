@@ -97,6 +97,37 @@ struct LocalizationCache {
         }
     }
 
+    // MARK: - Son gosterilen dil
+
+    private var lastLocaleFile: URL {
+        root
+            .appendingPathComponent(projectKey, isDirectory: true)
+            .appendingPathComponent("last-locale")
+    }
+
+    /// En son hangi dilin gosterildigi.
+    ///
+    /// Acilista hangi paketi senkron yukleyecegimizi bilmek icin gerekli.
+    /// Cihazin dilini projenin dillerine eslemek manifest'i, yani agi
+    /// gerektiriyor; bu bilgi diskte durmazsa ilk render dogru metni
+    /// gosteremez ve ag donunce metinler ziplar.
+    func lastLocale() -> String? {
+        guard
+            let data = try? Data(contentsOf: lastLocaleFile),
+            let raw = String(data: data, encoding: .utf8)
+        else { return nil }
+
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func saveLastLocale(_ locale: String) {
+        let directory = root.appendingPathComponent(projectKey, isDirectory: true)
+
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data(locale.utf8).write(to: lastLocaleFile, options: .atomic)
+    }
+
     func clear(locale: String) {
         try? fileManager.removeItem(at: file(for: locale))
     }

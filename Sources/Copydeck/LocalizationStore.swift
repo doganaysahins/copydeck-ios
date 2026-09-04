@@ -27,12 +27,25 @@ final class LocalizationStore: @unchecked Sendable {
         return strings.isEmpty
     }
 
-    func apply(_ bundle: LocalizationBundle) {
+    /// Icerik gercekten degistiyse `true` doner.
+    ///
+    /// Cagiran taraf UI'yi yalnizca o zaman tazeler: ayni paket tekrar
+    /// uygulandiginda gorunumu yeniden olusturmak bos yere goz kirpmasina
+    /// yol acar.
+    @discardableResult
+    func apply(_ bundle: LocalizationBundle) -> Bool {
         lock.lock()
+        defer { lock.unlock() }
+
+        let changed = currentRelease != bundle.release
+            || currentLocale != bundle.locale
+            || strings != bundle.strings
+
         strings = bundle.strings
         currentRelease = bundle.release
         currentLocale = bundle.locale
-        lock.unlock()
+
+        return changed
     }
 
     func reset() {
