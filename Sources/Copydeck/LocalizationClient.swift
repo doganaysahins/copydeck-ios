@@ -115,6 +115,30 @@ struct LocalizationClient: Sendable {
         }
     }
 
+    /// QA cihazdan onayliyor ya da sorun bildiriyor.
+    func postReview(
+        token: String,
+        action: String,
+        keys: [String],
+        comment: String?
+    ) async throws {
+        let url = baseURL
+            .appendingPathComponent("api/sdk/v1/preview")
+            .appendingPathComponent(token)
+            .appendingPathComponent("review")
+
+        var payload: [String: Any] = ["action": action, "keys": keys]
+
+        if let comment { payload["comment"] = comment }
+
+        let body = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
+        let (_, response) = try await transport.post(url, body: body)
+
+        guard response.statusCode == 200 else {
+            throw LocalizationError.httpStatus(response.statusCode)
+        }
+    }
+
     func fetchBundle(release: Int, locale: String) async throws -> LocalizationBundle {
         let url = baseURL
             .appendingPathComponent("api/sdk/v1/projects")

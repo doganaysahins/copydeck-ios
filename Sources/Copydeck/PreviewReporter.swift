@@ -50,6 +50,11 @@ final class PreviewReporter: @unchecked Sendable {
         lock.withLock { missing.insert(key) }
     }
 
+    /// Su an ekranda olan key'ler.
+    func currentlyVisible() -> [String] {
+        lock.withLock { visible.sorted() }
+    }
+
     /// Oturumun dili degisti: bu dilde hicbir sey gorulmemis sayilir.
     func localeChanged(to newLocale: String) {
         lock.withLock {

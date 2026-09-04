@@ -89,7 +89,21 @@ Localization.shared.startTestMode(token: kod)   // panelde QR olarak gorunur
 Localization.shared.stopTestMode()
 ```
 
+QA cihazdan onaylasin istiyorsan kok gorunume tek satir:
+
+```swift
+PaywallView()
+    .copydeckTestBar()
+```
+
+Test Mode acikken altta bir cubuk cikiyor: **Approve · Issue · Next**.
+Onay ekranda gorunen metinlere uygulaniyor, "Next" ayni ekranda kalarak bir
+sonraki dile geciyor. Oturum yokken hicbir sey cizilmiyor.
+
+Boylece QA telefondan hic ayrilmiyor; sonuclar panele akiyor.
+
 Uc kural:
+
 
 - **Taslak metin diske yazilmaz.** Yazilsaydi oturum bittikten sonra da
   cihazda kalir, yani yayinlanmamis metin gercek kullanicinin karsisina

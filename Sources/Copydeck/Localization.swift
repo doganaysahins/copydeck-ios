@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.8.0"
+    public static let version = "0.9.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -99,6 +99,7 @@ public final class Localization: @unchecked Sendable {
     private var previewRevision: Int?
     private var testMode: TestModeState = .off
     private var highlighted: String?
+    private var previewToken: String?
     private var foregroundObserver: NSObjectProtocol?
 
     /// Yayinlanmis icerigi izleyen gelistirme sorgusu.
@@ -316,6 +317,7 @@ public final class Localization: @unchecked Sendable {
         lock.withLock {
             previewTask?.cancel()
             previewTask = task
+            previewToken = token
         }
     }
 
@@ -326,6 +328,51 @@ public final class Localization: @unchecked Sendable {
 
     // Testler bu ikisini dogrudan cagiriyor: aksi halde her testin bir
     // saniyelik sorgu turunu beklemesi gerekirdi.
+    // MARK: - Cihazdan inceleme
+
+    /// Ekranda gorunen metinleri onaylar.
+    ///
+    /// QA telefonu elinde tutuyor ve laptopa bakiyor; her ekranda iki kez
+    /// baglam degistiriyor. Bunlar o gidis gelisi kaldiriyor.
+    @discardableResult
+    public func approveVisible() async -> Bool {
+        await sendReview(action: "approve", comment: nil)
+    }
+
+    @discardableResult
+    public func reportIssue(comment: String?) async -> Bool {
+        await sendReview(action: "issue", comment: comment)
+    }
+
+    /// Ayni ekranda kalarak bir sonraki dile gecer.
+    @discardableResult
+    public func nextTestLocale() async -> Bool {
+        await sendReview(action: "nextLocale", comment: nil)
+    }
+
+    private func sendReview(action: String, comment: String?) async -> Bool {
+        let (client, token) = lock.withLock { (self.client, self.previewToken) }
+
+        guard let client, let token else { return false }
+
+        do {
+            try await client.postReview(
+                token: token,
+                action: action,
+                keys: reporter.currentlyVisible(),
+                comment: comment
+            )
+
+            Copydeck.log("test: \(action) gonderildi")
+
+            return true
+        } catch {
+            Copydeck.log("test: \(action) gonderilemedi — \(error)")
+
+            return false
+        }
+    }
+
     func pollPreview(token: String) async throws {
         let client = lock.withLock { self.client }
 
@@ -399,6 +446,7 @@ public final class Localization: @unchecked Sendable {
             previewTask = nil
             previewRevision = nil
             highlighted = nil
+            previewToken = nil
             testMode = .off
 
             return publishedBundle
