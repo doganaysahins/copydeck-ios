@@ -59,25 +59,41 @@ CopyText("paywall.title")
 `Text` gibi davranir ve **kendi kendini tazeler** — yeni bir paket
 yayinlandiginda hicbir sey yapman gerekmez.
 
-`Text` tipinin kendisi gerektiginde (`Button` basligi, `Label`, uyari
-mesajlari, SwiftUI disi kod) `.localize` var:
+`Text` degil `String` gerektiginde — `Button` basligi, `Label`,
+`Text + Text` birlestirmesi, `accessibilityLabel` — `@Localized`:
 
 ```swift
-Button("paywall.cta.start_trial".localize) { startTrial() }
-```
+struct PaywallView: View {
+    @Localized("paywall.cta.start_trial") var cta
 
-`.localize` duz `String` donduruyor, yani SwiftUI o metnin degistigini
-kendiliginden bilemez — gozlemleyecek bir nesne yok. Bu yuzden `.localize`'i
-yaygin kullanan gorunumlerin kokune tek satir eklenir:
-
-```swift
-WindowGroup {
-    PaywallView()
-        .copydeckUpdates()
+    var body: some View {
+        Button(cta) { startTrial() }
+    }
 }
 ```
 
-`CopyText` kullaniyorsan buna da gerek yok.
+`DynamicProperty` oldugu icin SwiftUI bunu iceren gorunumun bagimliligi
+sayiyor: yeni paket geldiginde yalnizca o gorunum yeniden degerlendiriliyor,
+kimlik degismedigi icin `@State` ve scroll pozisyonu oldugu gibi kaliyor.
+
+SwiftUI disinda (UIKit, is mantigi, analitik) `.localize`:
+
+```swift
+label.text = "paywall.title".localize
+```
+
+### Hangisi ne zaman
+
+| Durum | Kullan |
+|---|---|
+| SwiftUI'de dogrudan metin | `CopyText("key")` |
+| `String` gereken SwiftUI yeri | `@Localized("key") var x` |
+| SwiftUI disi kod | `"key".localize` |
+
+`.copydeckUpdates()` diye bir modifier de var ama **son care**: altta `.id()`
+kullaniyor, yani alt agacin kimligini degistirip onu yok ediyor ve yeniden
+kuruyor. `@State` sifirlanir, scroll basa doner, kullanicinin doldurdugu form
+bosalir. Kokte kullanma.
 
 ## Davranis kurallari
 

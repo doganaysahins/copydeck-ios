@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.1.2"
+    public static let version = "0.1.3"
 
     static var userAgent: String {
         #if os(iOS)
