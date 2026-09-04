@@ -10,7 +10,7 @@ import UIKit
 
 /// Paket kimligi.
 public enum Copydeck {
-    public static let version = "0.5.0"
+    public static let version = "0.6.0"
 
     /// Konsola tani bilgisi yazar.
     ///
@@ -88,6 +88,7 @@ public final class Localization: @unchecked Sendable {
 
     private let lock = NSLock()
     private let store = LocalizationStore()
+    private let reporter = PreviewReporter()
 
     private var client: LocalizationClient?
     private var cache: LocalizationCache?
@@ -229,6 +230,20 @@ public final class Localization: @unchecked Sendable {
         }
     }
 
+    // MARK: - QA takibi
+
+    /// `CopyText` ekrana geldiginde bildiriyor.
+    ///
+    /// Test Mode kapaliyken de toplaniyor ama hicbir yere gonderilmiyor:
+    /// oturum acildiginda QA'nin o an baktigi ekran zaten biliniyor olsun.
+    func noteAppeared(_ key: String) {
+        reporter.appeared(key)
+    }
+
+    func noteDisappeared(_ key: String) {
+        reporter.disappeared(key)
+    }
+
     // MARK: - Test Mode
 
     /// Panelden baslatilan Test Mode oturumuna baglanir.
@@ -259,6 +274,8 @@ public final class Localization: @unchecked Sendable {
     public func startTestMode(token: String) {
         // Sayac gorevden once sifirlaniyor: gorev hemen calismaya basliyor ve
         // ilk turu bittikten sonra sifirlarsak o turun sonucu unutulur.
+        reporter.reset()
+
         lock.withLock {
             previewRevision = nil
             testMode = .connecting
@@ -304,7 +321,15 @@ public final class Localization: @unchecked Sendable {
 
         guard let client else { throw LocalizationError.notConfigured }
 
-        let state = try await client.fetchPreview(token: token)
+        let report = reporter.pendingReport()
+        let state = try await client.fetchPreview(token: token, report: report)
+
+        // Yalnizca istek basariyla dondugunde isaretleniyor: bir ag hatasi
+        // kapsam bilgisini sessizce dusurmemeli.
+        if let report { reporter.commit(report) }
+
+        // Dil degistiyse bu dilde hicbir sey gorulmemis sayilir.
+        reporter.localeChanged(to: state.locale)
 
         // Sunucu revision'i icerikten turetiyor: ayni degerse ekranda
         // degisecek bir sey yok.

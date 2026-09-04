@@ -15,6 +15,7 @@ final class FakeTransport: LocalizationTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [String: Reply] = [:]
     private(set) var requested: [String] = []
+    private(set) var postedBodies: [Data] = []
 
     func stub(path: String, status: Int = 200, json: String) {
         lock.withLock { replies[path] = Reply(status: status, body: Data(json.utf8)) }
@@ -22,6 +23,14 @@ final class FakeTransport: LocalizationTransport, @unchecked Sendable {
 
     func stub(path: String, status: Int) {
         lock.withLock { replies[path] = Reply(status: status, body: Data("{}".utf8)) }
+    }
+
+    // POST ve GET ayni stub havuzunu kullaniyor: testler acisindan fark
+    // yalnizca govdenin tasinmasi.
+    func post(_ url: URL, body: Data) async throws -> (Data, HTTPURLResponse) {
+        lock.withLock { postedBodies.append(body) }
+
+        return try await get(url)
     }
 
     func get(_ url: URL) async throws -> (Data, HTTPURLResponse) {
@@ -737,5 +746,87 @@ private struct SlowTransport: LocalizationTransport {
         try? await Task.sleep(nanoseconds: 5_000_000_000)
 
         throw LocalizationError.httpStatus(408)
+    }
+
+    func post(_ url: URL, body: Data) async throws -> (Data, HTTPURLResponse) {
+        try await get(url)
+    }
+}
+
+// MARK: - QA takibi
+
+final class PreviewReporterTests: XCTestCase {
+    func testReportsWhatIsOnScreen() {
+        let reporter = PreviewReporter()
+
+        reporter.appeared("paywall.title")
+        reporter.appeared("paywall.cta")
+
+        let report = reporter.pendingReport()
+
+        XCTAssertEqual(report?.visible, ["paywall.cta", "paywall.title"])
+        XCTAssertEqual(report?.newlySeen, ["paywall.cta", "paywall.title"])
+    }
+
+    /// QA ayni ekranda dururken saniyede bir ayni listeyi gondermenin
+    /// anlami yok.
+    func testNothingToSendWhenScreenIsUnchanged() {
+        let reporter = PreviewReporter()
+
+        reporter.appeared("paywall.title")
+
+        let first = try? XCTUnwrap(reporter.pendingReport())
+        reporter.commit(first!!)
+
+        XCTAssertNil(reporter.pendingReport())
+    }
+
+    func testReportsAgainWhenScreenChanges() throws {
+        let reporter = PreviewReporter()
+
+        reporter.appeared("paywall.title")
+        reporter.commit(try XCTUnwrap(reporter.pendingReport()))
+
+        reporter.disappeared("paywall.title")
+        reporter.appeared("settings.title")
+
+        let report = try XCTUnwrap(reporter.pendingReport())
+
+        XCTAssertEqual(report.visible, ["settings.title"])
+        XCTAssertEqual(report.newlySeen, ["settings.title"])
+    }
+
+    /// Gonderim basarisiz olursa kapsam bilgisi dusmemeli.
+    func testUncommittedReportIsRetried() throws {
+        let reporter = PreviewReporter()
+
+        reporter.appeared("paywall.title")
+
+        _ = reporter.pendingReport() // gonderilemedi, commit yok
+
+        let retry = try XCTUnwrap(reporter.pendingReport())
+
+        XCTAssertEqual(retry.newlySeen, ["paywall.title"])
+    }
+
+    /// Bir metni TR'de gormek DE'de gordugun anlamina gelmiyor.
+    func testSeenKeysResetWhenLocaleChanges() throws {
+        let reporter = PreviewReporter()
+
+        reporter.localeChanged(to: "tr")
+        reporter.appeared("paywall.title")
+        reporter.commit(try XCTUnwrap(reporter.pendingReport()))
+
+        XCTAssertNil(reporter.pendingReport())
+
+        reporter.localeChanged(to: "de")
+
+        let report = try XCTUnwrap(reporter.pendingReport())
+
+        XCTAssertEqual(
+            report.newlySeen,
+            ["paywall.title"],
+            "Dil degistiginde ayni key yeniden bildirilmeli"
+        )
     }
 }

@@ -29,6 +29,12 @@ public struct CopyText: View {
 
     public var body: some View {
         Text(Localization.shared.string(forKey: key, fallback: fallback))
+            // Test Mode'da panel QA'yi takip edebilsin diye gorunurluk
+            // bildiriliyor. Bunun icin gorunum olmak gerekiyor: `@Localized`
+            // duz String donduruyor ve bir String'in ekrana gelip
+            // gitmesini gozleyemezsin.
+            .onAppear { Localization.shared.noteAppeared(key) }
+            .onDisappear { Localization.shared.noteDisappeared(key) }
     }
 }
 
